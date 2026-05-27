@@ -1,127 +1,125 @@
+import * as THREE from "https://unpkg.com/three@0.166.1/build/three.module.js";
+import { estimatePose } from "./core/engine.js";
+
 const videoEl = document.getElementById("video");
+const threeLayerEl = document.getElementById("threeLayer");
 const overlayEl = document.getElementById("overlay");
 const startBtnEl = document.getElementById("startBtn");
 const cameraStatusEl = document.getElementById("cameraStatus");
 const edgeStatusEl = document.getElementById("edgeStatus");
 const imuStatusEl = document.getElementById("imuStatus");
 const orientationStatusEl = document.getElementById("orientationStatus");
+const poseStatusEl = document.getElementById("poseStatus");
 
 const ctx = overlayEl.getContext("2d");
 const sampleCanvas = document.createElement("canvas");
 const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
 
+const shapeModel = {
+  id: "demo-cross",
+  type: "edge-graph",
+  requiredTags: ["h-main", "v-main"],
+  edges: [
+    { a: [-1, 0, 0], b: [1, 0, 0], weight: 1.4, tag: "h-main" },
+    { a: [0, -1, 0], b: [0, 1, 0], weight: 1.2, tag: "v-main" },
+    { a: [-0.8, -0.8, 0], b: [0.8, 0.8, 0], weight: 0.4, tag: "diag-a" },
+    { a: [-0.8, 0.8, 0], b: [0.8, -0.8, 0], weight: 0.4, tag: "diag-b" },
+  ],
+};
+
 let stream;
 let running = false;
-let yawRad = 0;
-let pitchRad = 0;
-let rollRad = 0;
 let gyro = { x: 0, y: 0, z: 0 };
 let accel = { x: 0, y: 0, z: 0 };
+let latestOrientation = { alpha: 0, beta: 0, gamma: 0 };
+let previousDetection;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 100);
+camera.position.set(0, 0, 0);
+const renderer = new THREE.WebGLRenderer({
+  canvas: threeLayerEl,
+  alpha: true,
+  antialias: true,
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+const cube = new THREE.Mesh(
+  new THREE.BoxGeometry(0.28, 0.28, 0.28),
+  new THREE.MeshNormalMaterial({ wireframe: false, transparent: true, opacity: 0.82 }),
+);
+scene.add(cube);
+
+const wire = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(0.29, 0.29, 0.29)),
+  new THREE.LineBasicMaterial({ color: 0x4cd6ff }),
+);
+cube.add(wire);
 
 function resize() {
-  overlayEl.width = window.innerWidth;
-  overlayEl.height = window.innerHeight;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  overlayEl.width = w;
+  overlayEl.height = h;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
 }
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function rotate3D(point, rx, ry, rz) {
-  let [x, y, z] = point;
-  const cx = Math.cos(rx);
-  const sx = Math.sin(rx);
-  const y1 = (y * cx) - (z * sx);
-  const z1 = (y * sx) + (z * cx);
-  y = y1;
-  z = z1;
-
-  const cy = Math.cos(ry);
-  const sy = Math.sin(ry);
-  const x2 = (x * cy) + (z * sy);
-  const z2 = (-x * sy) + (z * cy);
-  x = x2;
-  z = z2;
-
-  const cz = Math.cos(rz);
-  const sz = Math.sin(rz);
-  const x3 = (x * cz) - (y * sz);
-  const y3 = (x * sz) + (y * cz);
-  return [x3, y3, z];
-}
-
-function projectPoint(point, width, height) {
-  const [x, y, z] = point;
-  const focal = width * 0.9;
-  const depth = z + 3.2;
-  const px = (x * focal) / depth + (width * 0.5);
-  const py = (y * focal) / depth + (height * 0.5);
-  return [px, py];
-}
-
-function drawCube(width, height) {
-  const s = 0.42;
-  const vertices = [
-    [-s, -s, -s], [s, -s, -s], [s, s, -s], [-s, s, -s],
-    [-s, -s, s], [s, -s, s], [s, s, s], [-s, s, s],
-  ];
-  const edges = [
-    [0, 1], [1, 2], [2, 3], [3, 0],
-    [4, 5], [5, 6], [6, 7], [7, 4],
-    [0, 4], [1, 5], [2, 6], [3, 7],
-  ];
-  const animatedYaw = yawRad + (performance.now() * 0.0002);
-  const rotated = vertices.map((v) => rotate3D(v, pitchRad * 0.6, animatedYaw, rollRad * 0.7));
-  const projected = rotated.map((v) => projectPoint(v, width, height));
-
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(96, 214, 255, 0.95)";
-  ctx.shadowColor = "rgba(96, 214, 255, 0.65)";
-  ctx.shadowBlur = 8;
-  for (const [a, b] of edges) {
-    const [x1, y1] = projected[a];
-    const [x2, y2] = projected[b];
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-  }
-  ctx.shadowBlur = 0;
-}
-
-function drawEdges(width, height) {
-  const sw = 240;
-  const sh = Math.round((height / width) * sw);
+function extractLines(width, height) {
+  const sw = 256;
+  const sh = Math.max(144, Math.round((height / width) * sw));
   sampleCanvas.width = sw;
   sampleCanvas.height = sh;
   sampleCtx.drawImage(videoEl, 0, 0, sw, sh);
-  const img = sampleCtx.getImageData(0, 0, sw, sh);
-  const data = img.data;
-  ctx.fillStyle = "rgba(255, 240, 70, 0.9)";
-  let hits = 0;
-  const step = 2;
-  for (let y = 1; y < sh - 1; y += step) {
-    for (let x = 1; x < sw - 1; x += step) {
+  const { data } = sampleCtx.getImageData(0, 0, sw, sh);
+
+  const lines = [];
+  let edgeHits = 0;
+  ctx.fillStyle = "rgba(255, 240, 70, 0.85)";
+
+  for (let y = 2; y < sh - 2; y += 3) {
+    let runStart = -1;
+    for (let x = 2; x < sw - 2; x += 1) {
       const l = ((y * sw + (x - 1)) * 4);
       const r = ((y * sw + (x + 1)) * 4);
       const u = (((y - 1) * sw + x) * 4);
       const d = (((y + 1) * sw + x) * 4);
-      const grayL = (data[l] + data[l + 1] + data[l + 2]) / 3;
-      const grayR = (data[r] + data[r + 1] + data[r + 2]) / 3;
-      const grayU = (data[u] + data[u + 1] + data[u + 2]) / 3;
-      const grayD = (data[d] + data[d + 1] + data[d + 2]) / 3;
-      const gx = grayR - grayL;
-      const gy = grayD - grayU;
+      const gx = ((data[r] + data[r + 1] + data[r + 2]) - (data[l] + data[l + 1] + data[l + 2])) / 3;
+      const gy = ((data[d] + data[d + 1] + data[d + 2]) - (data[u] + data[u + 1] + data[u + 2])) / 3;
       const mag = Math.hypot(gx, gy);
-      if (mag > 48) {
+      const on = mag > 52;
+      if (on && runStart < 0) runStart = x;
+      if (!on && runStart >= 0) {
+        const runLen = x - runStart;
+        if (runLen >= 16) {
+          const x1 = (runStart / sw) * width;
+          const x2 = (x / sw) * width;
+          const yy = (y / sh) * height;
+          lines.push({ x1, y1: yy, x2, y2: yy, score: Math.min(1, runLen / 72) });
+          edgeHits += runLen;
+        }
+        runStart = -1;
+      }
+      if (on && x % 3 === 0) {
         const px = (x / sw) * width;
         const py = (y / sh) * height;
         ctx.fillRect(px, py, 2, 2);
-        hits += 1;
       }
     }
   }
-  edgeStatusEl.textContent = `edges: ${hits}`;
+
+  edgeStatusEl.textContent = `edges: ${edgeHits}`;
+  return lines;
+}
+
+function applyDetection(detection) {
+  const [tx, ty, tz] = detection.pose.translation;
+  const [qx, qy, qz, qw] = detection.pose.rotation;
+  cube.position.set(tx, ty, -Math.max(0.5, tz));
+  cube.quaternion.set(qx, qy, qz, qw);
+  poseStatusEl.textContent =
+    `pose conf=${detection.confidence.toFixed(2)} t=(${tx.toFixed(2)}, ${ty.toFixed(2)}, ${tz.toFixed(2)})`;
 }
 
 function render() {
@@ -129,10 +127,21 @@ function render() {
   const w = overlayEl.width;
   const h = overlayEl.height;
   ctx.clearRect(0, 0, w, h);
+
   if (videoEl.readyState >= 2) {
-    drawEdges(w, h);
-    drawCube(w, h);
+    const lines = extractLines(w, h);
+    const detections = estimatePose({
+      options: { shapeModel, need3D: true },
+      frame: { timestamp: performance.now(), lines, keypoints: [], frameSize: { width: w, height: h } },
+      previous: previousDetection,
+    });
+    if (detections.length > 0) {
+      previousDetection = detections[0];
+      applyDetection(detections[0]);
+    }
   }
+
+  renderer.render(scene, camera);
   requestAnimationFrame(render);
 }
 
@@ -159,17 +168,19 @@ function bindImu() {
       y: event.accelerationIncludingGravity?.y ?? 0,
       z: event.accelerationIncludingGravity?.z ?? 0,
     };
-    imuStatusEl.textContent = `imu gyro[a,b,g]=${gyro.x.toFixed(1)}, ${gyro.y.toFixed(1)}, ${gyro.z.toFixed(1)} / acc=${accel.x.toFixed(1)}, ${accel.y.toFixed(1)}, ${accel.z.toFixed(1)}`;
+    imuStatusEl.textContent =
+      `imu gyro[a,b,g]=${gyro.x.toFixed(1)}, ${gyro.y.toFixed(1)}, ${gyro.z.toFixed(1)} / `
+      + `acc=${accel.x.toFixed(1)}, ${accel.y.toFixed(1)}, ${accel.z.toFixed(1)}`;
   });
 
   window.addEventListener("deviceorientation", (event) => {
-    const alpha = event.alpha ?? 0;
-    const beta = event.beta ?? 0;
-    const gamma = event.gamma ?? 0;
-    yawRad = (alpha * Math.PI) / 180;
-    pitchRad = clamp((beta * Math.PI) / 180, -1.2, 1.2);
-    rollRad = clamp((gamma * Math.PI) / 180, -1.2, 1.2);
-    orientationStatusEl.textContent = `orientation αβγ=${alpha.toFixed(1)}, ${beta.toFixed(1)}, ${gamma.toFixed(1)}`;
+    latestOrientation = {
+      alpha: event.alpha ?? 0,
+      beta: event.beta ?? 0,
+      gamma: event.gamma ?? 0,
+    };
+    orientationStatusEl.textContent =
+      `orientation αβγ=${latestOrientation.alpha.toFixed(1)}, ${latestOrientation.beta.toFixed(1)}, ${latestOrientation.gamma.toFixed(1)}`;
   });
 }
 
@@ -177,12 +188,15 @@ async function start() {
   startBtnEl.disabled = true;
   try {
     await requestImuPermission();
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false,
+    });
     videoEl.srcObject = stream;
     await videoEl.play();
     bindImu();
     running = true;
-    cameraStatusEl.textContent = "camera: active";
+    cameraStatusEl.textContent = "camera: active (core connected)";
     render();
   } catch (error) {
     cameraStatusEl.textContent = `camera: failed (${error instanceof Error ? error.message : "unknown"})`;
