@@ -1,12 +1,15 @@
 import * as THREE from "https://unpkg.com/three@0.166.1/build/three.module.js";
 import { estimatePose } from "./packages/core/dist/engine.js";
 
-const VERSION = "v0.1.4-imu-camera-demo";
+const VERSION = "v0.1.5-anchor-lock-demo";
 const CONFIDENCE_GATE = 0.62;
 const CONFIDENCE_HARD_REJECT = 0.45;
-const POSITION_LERP_ALPHA = 0.18;
+const POSITION_LERP_ALPHA = 0.12;
 const ROTATION_SLERP_ALPHA = 0.22;
 const MAX_STALE_FRAMES = 18;
+const CAMERA_TRANSLATION_SCALE = 1.1;
+const CAMERA_DEADZONE = 0.01;
+const HORIZONTAL_SIGN = 1;
 
 const videoEl = document.getElementById("video");
 const threeLayerEl = document.getElementById("threeLayer");
@@ -49,6 +52,7 @@ let baseOrientation = { alpha: 0, beta: 0, gamma: 0 };
 let previousDetection;
 let stableDetection;
 let staleFrames = 0;
+let anchorDetection;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 100);
@@ -65,7 +69,7 @@ const cube = new THREE.Mesh(
   new THREE.MeshNormalMaterial({ wireframe: false, transparent: true, opacity: 0.82 }),
 );
 scene.add(cube);
-// Keep cube visible before first reliable pose lock.
+// Keep cube in a world-fixed place and move camera instead.
 cube.position.set(0, 0, -1.2);
 
 const wire = new THREE.LineSegments(
@@ -180,14 +184,26 @@ function extractLines(width, height) {
 }
 
 function applyDetection(detection) {
-  const [tx, ty, tz] = detection.pose.translation;
+  if (!anchorDetection) {
+    anchorDetection = detection;
+  }
+  const [anchorTx, anchorTy] = anchorDetection.pose.translation;
+  const [tx, ty] = detection.pose.translation;
   const [qx, qy, qz, qw] = detection.pose.rotation;
-  const targetPosition = new THREE.Vector3(tx, ty, -Math.max(0.5, tz));
+  const dx = tx - anchorTx;
+  const dy = ty - anchorTy;
+  const worldX = Math.abs(dx) < CAMERA_DEADZONE ? 0 : dx;
+  const worldY = Math.abs(dy) < CAMERA_DEADZONE ? 0 : dy;
+  const targetPosition = new THREE.Vector3(
+    HORIZONTAL_SIGN * -worldX * CAMERA_TRANSLATION_SCALE,
+    worldY * CAMERA_TRANSLATION_SCALE,
+    0,
+  );
   const targetQuaternion = new THREE.Quaternion(qx, qy, qz, qw);
-  cube.position.lerp(targetPosition, POSITION_LERP_ALPHA);
+  camera.position.lerp(targetPosition, POSITION_LERP_ALPHA);
   cube.quaternion.slerp(targetQuaternion, ROTATION_SLERP_ALPHA);
   poseStatusEl.textContent =
-    `pose conf=${detection.confidence.toFixed(2)} t=(${tx.toFixed(2)}, ${ty.toFixed(2)}, ${tz.toFixed(2)})`;
+    `pose conf=${detection.confidence.toFixed(2)} d=(${dx.toFixed(2)}, ${dy.toFixed(2)})`;
 }
 
 function holdPoseStatus() {
@@ -237,6 +253,7 @@ function render() {
       if (staleFrames > MAX_STALE_FRAMES) {
         previousDetection = undefined;
         stableDetection = undefined;
+        anchorDetection = undefined;
       }
     }
   }
