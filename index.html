@@ -6,12 +6,13 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <title>Geometry Demo</title>
+    <title>Web Geometry Demo</title>
     <style>
       :root { color-scheme: dark; }
       body { margin: 0; background: #05070a; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
       #root { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
       #video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      #threeLayer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
       #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
       #hud {
         position: absolute; left: 12px; top: 12px; z-index: 5;
@@ -30,13 +31,16 @@
   <body>
     <div id="root">
       <video id="video" playsinline muted autoplay></video>
+      <canvas id="threeLayer"></canvas>
       <canvas id="overlay"></canvas>
       <div id="hud">
         <h1>Web Geometry Demo</h1>
+        <p id="version">version: -</p>
         <p id="cameraStatus">camera: idle</p>
         <p id="edgeStatus">edges: -</p>
         <p id="imuStatus">imu: waiting</p>
         <p id="orientationStatus">orientation: -</p>
+        <p id="poseStatus">pose: waiting</p>
       </div>
       <button id="startBtn" type="button">Start Demo</button>
     </div>

@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.166.1/build/three.module.js";
-import { estimatePose } from "./core/engine.js";
+import { estimatePose } from "./packages/core/dist/engine.js";
 
-const VERSION = "v0.1.0-core-demo";
+const VERSION = "v0.1.1-root-demo";
 
 const videoEl = document.getElementById("video");
 const threeLayerEl = document.getElementById("threeLayer");

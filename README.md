@@ -23,21 +23,16 @@ Webブラウザ向けの Geometry-first Pose Estimation API。
 ## Development
 
 ```bash
-cd /Users/miyagikenta/Documents/github/web-geometry-pose
 npm install
 npm run build
 ```
 
 ## Demo
 
-Camera edge overlay + IMU HUD + floating cube demo:
+動作確認デモ（ルート配信）:
 
-```bash
-cd /Users/miyagikenta/Documents/github/web-geometry-pose
-python3 -m http.server 8080
-```
-
-Open `http://localhost:8080/demo/`.
+- GitHub Pages: https://lumetriq-labs.github.io/web-geometry-pose/
+- ローカル: `python3 -m http.server 8080` → http://localhost:8080/
 
 ## Working Principles
 

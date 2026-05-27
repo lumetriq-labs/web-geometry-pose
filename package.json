@@ -6,6 +6,7 @@
   ],
   "scripts": {
     "build": "npm run build -w @lumetriq/geometry-core && npm run build -w @lumetriq/geometry-client",
+    "build:pages": "npm run build -w @lumetriq/geometry-core",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": {
