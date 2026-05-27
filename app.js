@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.166.1/build/three.module.js";
 import { estimatePose } from "./packages/core/dist/engine.js";
 
-const VERSION = "v0.1.2-stabilized-demo";
+const VERSION = "v0.1.3-stabilized-demo";
 const CONFIDENCE_GATE = 0.62;
 const CONFIDENCE_HARD_REJECT = 0.45;
 const POSITION_LERP_ALPHA = 0.18;
@@ -63,6 +63,8 @@ const cube = new THREE.Mesh(
   new THREE.MeshNormalMaterial({ wireframe: false, transparent: true, opacity: 0.82 }),
 );
 scene.add(cube);
+// Keep cube visible before first reliable pose lock.
+cube.position.set(0, 0, -1.2);
 
 const wire = new THREE.LineSegments(
   new THREE.EdgesGeometry(new THREE.BoxGeometry(0.29, 0.29, 0.29)),
@@ -163,6 +165,12 @@ function render() {
     });
     const next = detections.length > 0 ? detections[0] : undefined;
     if (next && next.confidence >= CONFIDENCE_GATE) {
+      previousDetection = next;
+      stableDetection = next;
+      staleFrames = 0;
+      applyDetection(next);
+    } else if (!stableDetection && next && next.confidence >= CONFIDENCE_HARD_REJECT) {
+      // Bootstrap initial lock with a softer threshold.
       previousDetection = next;
       stableDetection = next;
       staleFrames = 0;
