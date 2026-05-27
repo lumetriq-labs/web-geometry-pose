@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.166.1/build/three.module.js";
 import { estimatePose } from "./packages/core/dist/engine.js";
 
-const VERSION = "v0.1.5-anchor-lock-demo";
+const VERSION = "v0.1.6-camera-estimate-hud";
 const CONFIDENCE_GATE = 0.62;
 const CONFIDENCE_HARD_REJECT = 0.45;
 const POSITION_LERP_ALPHA = 0.12;
@@ -17,6 +17,8 @@ const overlayEl = document.getElementById("overlay");
 const startBtnEl = document.getElementById("startBtn");
 const versionEl = document.getElementById("version");
 const cameraStatusEl = document.getElementById("cameraStatus");
+const cameraDeltaStatusEl = document.getElementById("cameraDeltaStatus");
+const cameraAttitudeStatusEl = document.getElementById("cameraAttitudeStatus");
 const edgeStatusEl = document.getElementById("edgeStatus");
 const imuStatusEl = document.getElementById("imuStatus");
 const orientationStatusEl = document.getElementById("orientationStatus");
@@ -49,6 +51,7 @@ let accel = { x: 0, y: 0, z: 0 };
 let latestOrientation = { alpha: 0, beta: 0, gamma: 0 };
 let orientationReady = false;
 let baseOrientation = { alpha: 0, beta: 0, gamma: 0 };
+let relativeOrientation = { yawDeg: 0, pitchDeg: 0, rollDeg: 0 };
 let previousDetection;
 let stableDetection;
 let staleFrames = 0;
@@ -90,6 +93,7 @@ function updateCameraFromImu() {
   const relAlpha = shortestAngleDeg(latestOrientation.alpha, baseOrientation.alpha);
   const relBeta = shortestAngleDeg(latestOrientation.beta, baseOrientation.beta);
   const relGamma = shortestAngleDeg(latestOrientation.gamma, baseOrientation.gamma);
+  relativeOrientation = { yawDeg: relAlpha, pitchDeg: relBeta, rollDeg: relGamma };
 
   // Map device orientation to a relative camera attitude.
   const yaw = THREE.MathUtils.degToRad(relAlpha);
@@ -98,6 +102,16 @@ function updateCameraFromImu() {
   const targetEuler = new THREE.Euler(-pitch * 0.5, -yaw * 0.5, -roll * 0.35, "YXZ");
   const targetQuat = new THREE.Quaternion().setFromEuler(targetEuler);
   camera.quaternion.slerp(targetQuat, 0.18);
+}
+
+function updateEstimatedCameraHud() {
+  if (!cameraDeltaStatusEl || !cameraAttitudeStatusEl) return;
+  const distanceMeters = camera.position.length();
+  cameraDeltaStatusEl.textContent = `camera delta: ${distanceMeters.toFixed(2)} m from start`;
+  cameraAttitudeStatusEl.textContent =
+    `camera attitude: yaw ${relativeOrientation.yawDeg.toFixed(1)}°, `
+    + `pitch ${relativeOrientation.pitchDeg.toFixed(1)}°, `
+    + `roll ${relativeOrientation.rollDeg.toFixed(1)}°`;
 }
 
 function resize() {
@@ -259,6 +273,7 @@ function render() {
   }
 
   updateCameraFromImu();
+  updateEstimatedCameraHud();
   renderer.render(scene, camera);
   requestAnimationFrame(render);
 }
