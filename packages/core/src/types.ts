@@ -24,12 +24,15 @@ export interface ImuSample {
 export interface EdgeGraphEdge {
   a: Vec3;
   b: Vec3;
+  weight?: number;
+  tag?: string;
 }
 
 export interface ShapeModel {
   id: string;
   type: "edge-graph" | "glb" | "obj";
   edges?: EdgeGraphEdge[];
+  requiredTags?: string[];
   assetUrl?: string;
 }
 
@@ -37,6 +40,7 @@ export interface FrameFeatures {
   timestamp: number;
   lines: LineSegment[];
   keypoints: Keypoint[];
+  frameSize?: { width: number; height: number };
 }
 
 export interface Pose {
@@ -55,4 +59,10 @@ export interface SessionOptions {
   shapeModel: ShapeModel;
   need3D?: boolean;
   calibration?: boolean;
+}
+
+export interface PoseEstimateInput {
+  options: SessionOptions;
+  frame: FrameFeatures;
+  previous?: DetectionResult;
 }

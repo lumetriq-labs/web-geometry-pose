@@ -10,4 +10,7 @@ export type {
   SessionOptions,
   ShapeModel,
   Vec3,
+  PoseEstimateInput,
 } from "./types.js";
+
+export { estimatePose } from "./engine.js";

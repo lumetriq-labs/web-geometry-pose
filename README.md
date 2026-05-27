@@ -28,6 +28,17 @@ npm install
 npm run build
 ```
 
+## Demo
+
+Camera edge overlay + IMU HUD + floating cube demo:
+
+```bash
+cd /Users/miyagikenta/Documents/github/web-geometry-pose
+python3 -m http.server 8080
+```
+
+Open `http://localhost:8080/demo/`.
+
 ## Working Principles
 
 - Geometry-first（AI 物体検出に依存しない）

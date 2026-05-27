@@ -5,7 +5,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @lumetriq/geometry-core && npm run build -w @lumetriq/geometry-client",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": {
