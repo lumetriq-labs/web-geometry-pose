@@ -1,15 +1,22 @@
 import * as THREE from "https://unpkg.com/three@0.166.1/build/three.module.js";
 import { estimatePose } from "./core/engine.js";
 
+const VERSION = "v0.1.0-core-demo";
+
 const videoEl = document.getElementById("video");
 const threeLayerEl = document.getElementById("threeLayer");
 const overlayEl = document.getElementById("overlay");
 const startBtnEl = document.getElementById("startBtn");
+const versionEl = document.getElementById("version");
 const cameraStatusEl = document.getElementById("cameraStatus");
 const edgeStatusEl = document.getElementById("edgeStatus");
 const imuStatusEl = document.getElementById("imuStatus");
 const orientationStatusEl = document.getElementById("orientationStatus");
 const poseStatusEl = document.getElementById("poseStatus");
+
+if (versionEl) {
+  versionEl.textContent = `Version: ${VERSION} / loaded: ${new Date().toLocaleString()}`;
+}
 
 const ctx = overlayEl.getContext("2d");
 const sampleCanvas = document.createElement("canvas");
