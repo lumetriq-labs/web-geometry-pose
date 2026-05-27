@@ -17,6 +17,10 @@ function lineMidpoint(line: LineSegment): { x: number; y: number } {
   return { x: (line.x1 + line.x2) * 0.5, y: (line.y1 + line.y2) * 0.5 };
 }
 
+function lineDirection(line: LineSegment): { dx: number; dy: number } {
+  return { dx: line.x2 - line.x1, dy: line.y2 - line.y1 };
+}
+
 function averageMidpoint(lines: LineSegment[]): { x: number; y: number } {
   if (lines.length === 0) return { x: 0.5, y: 0.5 };
   let sx = 0;
@@ -27,6 +31,31 @@ function averageMidpoint(lines: LineSegment[]): { x: number; y: number } {
     sy += mid.y;
   }
   return { x: sx / lines.length, y: sy / lines.length };
+}
+
+function estimateAnchorPoint(lines: LineSegment[]): { x: number; y: number } {
+  if (lines.length === 0) return { x: 0.5, y: 0.5 };
+  const horizontal = lines
+    .filter((line) => {
+      const { dx, dy } = lineDirection(line);
+      return Math.abs(dx) > Math.abs(dy) * 1.5;
+    })
+    .sort((a, b) => (segmentLength(b) * b.score) - (segmentLength(a) * a.score));
+  const vertical = lines
+    .filter((line) => {
+      const { dx, dy } = lineDirection(line);
+      return Math.abs(dy) > Math.abs(dx) * 1.5;
+    })
+    .sort((a, b) => (segmentLength(b) * b.score) - (segmentLength(a) * a.score));
+
+  if (horizontal.length > 0 && vertical.length > 0) {
+    const hMid = lineMidpoint(horizontal[0]);
+    const vMid = lineMidpoint(vertical[0]);
+    return { x: vMid.x, y: hMid.y };
+  }
+  if (horizontal.length > 0) return lineMidpoint(horizontal[0]);
+  if (vertical.length > 0) return lineMidpoint(vertical[0]);
+  return averageMidpoint(lines);
 }
 
 function selectStrongLines(frame: FrameFeatures): LineSegment[] {
@@ -180,7 +209,7 @@ function makeDetection(
   if (options.shapeModel.type !== "edge-graph" || !options.shapeModel.edges?.length) return null;
   if (lines.length === 0) return null;
 
-  const midpoint = averageMidpoint(lines);
+  const midpoint = estimateAnchorPoint(lines);
   const normalized = normalizePoint(midpoint, frame);
   const imagePoint = smoothPoint(normalized, previous);
   const baseConfidence = estimateConfidence(lines, previous);

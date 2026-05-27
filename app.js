@@ -1,7 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.166.1/build/three.module.js";
 import { estimatePose } from "./packages/core/dist/engine.js";
 
-const VERSION = "v0.1.3-stabilized-demo";
+const VERSION = "v0.1.4-imu-camera-demo";
 const CONFIDENCE_GATE = 0.62;
 const CONFIDENCE_HARD_REJECT = 0.45;
 const POSITION_LERP_ALPHA = 0.18;
@@ -44,6 +44,8 @@ let running = false;
 let gyro = { x: 0, y: 0, z: 0 };
 let accel = { x: 0, y: 0, z: 0 };
 let latestOrientation = { alpha: 0, beta: 0, gamma: 0 };
+let orientationReady = false;
+let baseOrientation = { alpha: 0, beta: 0, gamma: 0 };
 let previousDetection;
 let stableDetection;
 let staleFrames = 0;
@@ -71,6 +73,28 @@ const wire = new THREE.LineSegments(
   new THREE.LineBasicMaterial({ color: 0x4cd6ff }),
 );
 cube.add(wire);
+
+function shortestAngleDeg(current, base) {
+  let d = current - base;
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return d;
+}
+
+function updateCameraFromImu() {
+  if (!orientationReady) return;
+  const relAlpha = shortestAngleDeg(latestOrientation.alpha, baseOrientation.alpha);
+  const relBeta = shortestAngleDeg(latestOrientation.beta, baseOrientation.beta);
+  const relGamma = shortestAngleDeg(latestOrientation.gamma, baseOrientation.gamma);
+
+  // Map device orientation to a relative camera attitude.
+  const yaw = THREE.MathUtils.degToRad(relAlpha);
+  const pitch = THREE.MathUtils.degToRad(relBeta);
+  const roll = THREE.MathUtils.degToRad(relGamma);
+  const targetEuler = new THREE.Euler(-pitch * 0.5, -yaw * 0.5, -roll * 0.35, "YXZ");
+  const targetQuat = new THREE.Quaternion().setFromEuler(targetEuler);
+  camera.quaternion.slerp(targetQuat, 0.18);
+}
 
 function resize() {
   const w = window.innerWidth;
@@ -121,6 +145,32 @@ function extractLines(width, height) {
         const px = (x / sw) * width;
         const py = (y / sh) * height;
         ctx.fillRect(px, py, 2, 2);
+      }
+    }
+  }
+
+  for (let x = 2; x < sw - 2; x += 4) {
+    let runStart = -1;
+    for (let y = 2; y < sh - 2; y += 1) {
+      const l = ((y * sw + (x - 1)) * 4);
+      const r = ((y * sw + (x + 1)) * 4);
+      const u = (((y - 1) * sw + x) * 4);
+      const d = (((y + 1) * sw + x) * 4);
+      const gx = ((data[r] + data[r + 1] + data[r + 2]) - (data[l] + data[l + 1] + data[l + 2])) / 3;
+      const gy = ((data[d] + data[d + 1] + data[d + 2]) - (data[u] + data[u + 1] + data[u + 2])) / 3;
+      const mag = Math.hypot(gx, gy);
+      const on = mag > 52;
+      if (on && runStart < 0) runStart = y;
+      if (!on && runStart >= 0) {
+        const runLen = y - runStart;
+        if (runLen >= 20) {
+          const xx = (x / sw) * width;
+          const y1 = (runStart / sh) * height;
+          const y2 = (y / sh) * height;
+          lines.push({ x1: xx, y1, x2: xx, y2, score: Math.min(1, runLen / 90) });
+          edgeHits += runLen;
+        }
+        runStart = -1;
       }
     }
   }
@@ -191,6 +241,7 @@ function render() {
     }
   }
 
+  updateCameraFromImu();
   renderer.render(scene, camera);
   requestAnimationFrame(render);
 }
@@ -229,6 +280,10 @@ function bindImu() {
       beta: event.beta ?? 0,
       gamma: event.gamma ?? 0,
     };
+    if (!orientationReady) {
+      baseOrientation = { ...latestOrientation };
+      orientationReady = true;
+    }
     orientationStatusEl.textContent =
       `orientation αβγ=${latestOrientation.alpha.toFixed(1)}, ${latestOrientation.beta.toFixed(1)}, ${latestOrientation.gamma.toFixed(1)}`;
   });
@@ -245,6 +300,7 @@ async function start() {
     videoEl.srcObject = stream;
     await videoEl.play();
     bindImu();
+    baseOrientation = { ...latestOrientation };
     running = true;
     cameraStatusEl.textContent = "camera: active (core connected)";
     render();
